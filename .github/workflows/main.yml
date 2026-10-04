@@ -1,53 +1,10 @@
-name: Update electricity prices
+name: Test Elpris
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  update:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download DK2 prices
-        run: |
-          curl -L "https://api.energidataservice.dk/dataset/DayAheadPrices?filter=%7B%22PriceArea%22:%5B%22DK2%22%5D%7D&limit=300" -o raw.json
-
-      - name: Create prices.json
-        shell: python
-        run: |
-          import json
-
-          with open("raw.json") as f:
-              data = json.load(f)
-
-          hours = []
-
-          for x in data["records"]:
-              t = x.get("TimeDK")
-              p = x.get("DayAheadPriceDKK")
-
-              if t and p is not None:
-                  hours.append({
-                      "time": t,
-                      "price": float(p) / 1000
-                  })
-
-          with open("prices.json", "w") as f:
-              json.dump({
-                  "area": "DK2",
-                  "hours": hours
-              }, f, indent=2)
-
-      - name: Save prices
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add prices.json
-          git diff --cached --quiet || git commit -m "Update electricity prices"
-          git push
+      - run: echo "Elpris virker"
