@@ -2,8 +2,6 @@ name: Update electricity prices
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "7 * * * *"
 
 permissions:
   contents: write
@@ -14,48 +12,40 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Download prices
+        run: |
+          curl -L "https://api.energidataservice.dk/dataset/DayAheadPrices?filter=%7B%22PriceArea%22:%5B%22DK2%22%5D%7D&limit=300" -o raw.json
+
       - name: Create prices.json
         shell: python
         run: |
-          import json, urllib.parse, urllib.request
+          import json
 
-          p = {
-              "start": "now-P1D",
-              "end": "now+P2D",
-              "filter": json.dumps({"PriceArea":["DK2"]}, separators=(",",":")),
-              "limit": "0"
-          }
+          with open("raw.json") as f:
+              data = json.load(f)
 
-          u = "https://api.energidataservice.dk/dataset/DayAheadPrices?" + urllib.parse.urlencode(p)
+          hours = []
 
-          req = urllib.request.Request(
-              u,
-              headers={"User-Agent":"Elpris-V5"}
-          )
+          for x in data["records"]:
+              t = x.get("TimeDK")
+              p = x.get("DayAheadPriceDKK")
 
-          with urllib.request.urlopen(req, timeout=30) as r:
-              d = json.load(r)
-
-          b = {}
-
-          for x in d.get("records", []):
-              t = x.get("TimeDK") or x.get("HourDK") or x.get("TimeUTC") or x.get("HourUTC")
-              v = x.get("DayAheadPriceDKK", x.get("SpotPriceDKK", x.get("PriceDKK")))
-
-              if t and v is not None:
-                  b.setdefault(t[:13] + ":00:00", []).append(float(v) / 1000)
-
-          hours = [
-              {"time": k, "price": sum(v) / len(v)}
-              for k, v in sorted(b.items())
-          ]
+              if t and p is not None:
+                  hours.append({
+                      "time": t,
+                      "price": float(p) / 1000
+                  })
 
           with open("prices.json", "w") as f:
-              json.dump({"area":"DK2", "hours":hours}, f, indent=2)
+              json.dump({
+                  "area": "DK2",
+                  "hours": hours
+              }, f, indent=2)
 
-      - name: Commit
+      - name: Save prices
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add prices.json
-          git diff --cached --quiet || (git commit -m "Update electricity prices" && git push)
+          git diff --cached --quiet || git commit -m "Update electricity prices"
+          git push
