@@ -1,0 +1,61 @@
+name: Update electricity prices
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create prices.json
+        shell: python
+        run: |
+          import json, urllib.parse, urllib.request
+
+          p = {
+              "start": "now-P1D",
+              "end": "now+P2D",
+              "filter": json.dumps({"PriceArea":["DK2"]}, separators=(",",":")),
+              "limit": "0"
+          }
+
+          u = "https://api.energidataservice.dk/dataset/DayAheadPrices?" + urllib.parse.urlencode(p)
+
+          req = urllib.request.Request(
+              u,
+              headers={"User-Agent":"Elpris-V5"}
+          )
+
+          with urllib.request.urlopen(req, timeout=30) as r:
+              d = json.load(r)
+
+          b = {}
+
+          for x in d.get("records", []):
+              t = x.get("TimeDK") or x.get("HourDK") or x.get("TimeUTC") or x.get("HourUTC")
+              v = x.get("DayAheadPriceDKK", x.get("SpotPriceDKK", x.get("PriceDKK")))
+
+              if t and v is not None:
+                  b.setdefault(t[:13] + ":00:00", []).append(float(v) / 1000)
+
+          hours = [
+              {"time": k, "price": sum(v) / len(v)}
+              for k, v in sorted(b.items())
+          ]
+
+          with open("prices.json", "w") as f:
+              json.dump({"area":"DK2", "hours":hours}, f, indent=2)
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add prices.json
+          git diff --cached --quiet || (git commit -m "Update electricity prices" && git push)
