@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#091017">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Elpris">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Elpris</title>
+<style>
+:root{--bg:#081017;--panel:#13202b;--fg:#f7fafc;--muted:#9db0c0;--g:#159447;--y:#b68b00;--r:#b52b2b}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+main{max-width:1450px;margin:auto;padding:22px}.head{display:flex;justify-content:space-between;align-items:end;gap:15px}
+h1{margin:0;font-size:clamp(32px,5vw,66px)}.muted{color:var(--muted)}#clock{font-weight:800;font-size:clamp(18px,2.5vw,34px)}
+.hero{margin:20px 0;border-radius:28px;padding:28px;display:flex;justify-content:space-between;align-items:center;gap:18px;min-height:230px}
+.green{background:linear-gradient(135deg,#08632c,#12a14d)}.yellow{background:linear-gradient(135deg,#725700,#b78b00)}.red{background:linear-gradient(135deg,#771818,#bd3030)}
+.status{font-weight:950;font-size:clamp(35px,6vw,78px);line-height:1}.advice{font-size:clamp(17px,2vw,29px);margin-top:12px}
+.price{font-weight:950;font-size:clamp(55px,9vw,120px);line-height:.9;white-space:nowrap}.unit{text-align:right;margin-top:10px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--panel);border-radius:20px;padding:20px}.card b{font-size:22px}
+.hours{display:grid;grid-template-columns:repeat(12,1fr);gap:8px}.hour{border-radius:13px;padding:11px 5px;text-align:center}.hour.now{outline:4px solid white}.t{font-weight:800}.p{font-weight:950;font-size:19px;margin-top:6px}
+h2{margin-top:28px}.err{background:#522020;padding:15px;border-radius:15px;margin:14px 0}
+.install{display:none;background:var(--panel);border-radius:16px;padding:15px;margin:14px 0}
+@media(max-width:700px){main{padding:16px}.head{align-items:start}.hero{display:block;min-height:0}.price{margin-top:28px}.unit{text-align:left}.cards{grid-template-columns:1fr}.hours{grid-template-columns:repeat(4,1fr)}h2{font-size:25px}.install{display:block}}
+</style></head><body><main>
+<div class="head"><div><h1>⚡ Elpris</h1><div class="muted">DK2 · Sjælland</div></div><div id="clock"></div></div>
+<div class="install">📱 <b>Installer på iPhone:</b> Åbn siden i Safari → Del → <b>Føj til hjemmeskærm</b>.</div>
+<section id="hero" class="hero green"><div><div id="status" class="status">HENTER PRIS…</div><div id="advice" class="advice">Henter dagens priser</div></div><div><div id="price" class="price">–</div><div class="unit">kr./kWh · spotpris</div></div></section>
+<div id="err"></div>
+<div class="cards"><div class="card"><span class="muted">Billigste time</span><br><b id="cheap">–</b></div>
+<div class="card"><span class="muted">Vask / opvask</span><br><b id="wash">–</b></div>
+<div class="card"><span class="muted">Elbil · billigste 4 timer</span><br><b id="car">–</b></div></div>
+<h2>Næste timer</h2><div id="hours" class="hours"></div>
+<p class="muted">🟢 under 1,00 kr. &nbsp; 🟡 1,00–1,99 kr. &nbsp; 🔴 2,00 kr. eller mere.</p>
+</main>
+<script>
+const AREA="DK2",GREEN=1,YELLOW=2,$=x=>document.getElementById(x);
+function c(p){return p<GREEN?"green":p<YELLOW?"yellow":"red"} function n(p){return p.toFixed(2).replace(".",",")}
+function tick(){$("clock").textContent=new Date().toLocaleTimeString("da-DK",{hour:"2-digit",minute:"2-digit"})}tick();setInterval(tick,1000);
+async function load(){
+try{
+ const f=encodeURIComponent(JSON.stringify({PriceArea:[AREA]}));
+ const u=`https://api.energidataservice.dk/dataset/DayAheadPrices?filter=${f}&sort=TimeUTC%20DESC&limit=300`;
+ const r=await fetch(u,{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);const j=await r.json();
+ let raw=(j.records||[]).map(x=>({d:new Date(x.TimeUTC??x.TimeDK??x.HourUTC??x.HourDK),p:Number(x.DayAheadPriceDKK??x.SpotPriceDKK??x.PriceDKK)/1000}))
+ .filter(x=>Number.isFinite(x.p)&&!isNaN(x.d)).sort((a,b)=>a.d-b.d);if(!raw.length)throw Error("Ingen prisdata");
+ const m=new Map();raw.forEach(x=>{let d=x.d,k=[d.getFullYear(),d.getMonth(),d.getDate(),d.getHours()].join("-");if(!m.has(k))m.set(k,{d:new Date(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours()),a:[]});m.get(k).a.push(x.p)});
+ let rows=[...m.values()].map(x=>({d:x.d,p:x.a.reduce((a,b)=>a+b,0)/x.a.length})).sort((a,b)=>a.d-b.d);
+ let now=new Date(),floor=new Date(now.getFullYear(),now.getMonth(),now.getDate(),now.getHours());rows=rows.filter(x=>x.d>=floor).slice(0,48);if(!rows.length)throw Error("Ingen aktuelle priser");
+ let cur=rows[0],cl=c(cur.p);$("hero").className="hero "+cl;$("status").textContent=cur.p<1?"BILLIG STRØM":cur.p<2?"NORMAL PRIS":"DYR STRØM";
+ $("advice").textContent=cur.p<1?"Godt tidspunkt til vask, opvask og elbil 🚗":cur.p<2?"Almindeligt forbrug er fint.":"Vent helst med større elforbrug.";$("price").textContent=n(cur.p);
+ $("hours").innerHTML=rows.map((x,i)=>`<div class="hour ${c(x.p)} ${i===0?"now":""}"><div class="t">${x.d.toLocaleDateString("da-DK",{weekday:"short"})}<br>${String(x.d.getHours()).padStart(2,"0")}-${String((x.d.getHours()+1)%24).padStart(2,"0")}</div><div class="p">${n(x.p)}</div></div>`).join("");
+ let cheapest=[...rows].sort((a,b)=>a.p-b.p)[0];$("cheap").textContent=`${cheapest.d.toLocaleDateString("da-DK",{weekday:"short"})} kl. ${String(cheapest.d.getHours()).padStart(2,"0")} · ${n(cheapest.p)} kr.`;
+ let g=rows.find(x=>x.p<1);$("wash").textContent=g?`Næste grønne: ${g.d.toLocaleDateString("da-DK",{weekday:"short"})} kl. ${String(g.d.getHours()).padStart(2,"0")}`:"Ingen grøn time i perioden";
+ let best;for(let i=0;i<=rows.length-4;i++){let a=rows.slice(i,i+4),avg=a.reduce((s,x)=>s+x.p,0)/4;if(!best||avg<best.avg)best={d:a[0].d,avg}}
+ $("car").textContent=best?`${best.d.toLocaleDateString("da-DK",{weekday:"short"})} kl. ${String(best.d.getHours()).padStart(2,"0")}-${String((best.d.getHours()+4)%24).padStart(2,"0")} · ${n(best.avg)} kr.`:"Afventer priser";$("err").innerHTML="";
+ localStorage.setItem("lastPrices",JSON.stringify({at:Date.now(),rows:rows.map(x=>({d:x.d,p:x.p}))}));
+}catch(e){$("status").textContent="PRISDATA OFFLINE";$("advice").textContent="Kunne ikke opdatere priser.";$("err").innerHTML=`<div class="err">${e.message}</div>`}}
+load();setInterval(load,15*60*1000);
+if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js");
+</script></body></html>
