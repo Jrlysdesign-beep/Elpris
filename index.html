@@ -42,8 +42,10 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString("da-DK",{ho
 async function load(){
 try{
  const f=encodeURIComponent(JSON.stringify({PriceArea:[AREA]}));
- const u=`https://api.energidataservice.dk/dataset/DayAheadPrices?filter=${f}&sort=TimeUTC%20DESC&limit=300`;
- const r=await fetch(u,{cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);const j=await r.json();
+ // Use an explicit time window. This avoids requesting the newest 300 rows
+ // across all available data and follows Energi Data Service's intended query pattern.
+ const u=`https://api.energidataservice.dk/dataset/DayAheadPrices?start=StartOfDay-P1D&end=StartOfDay%2BP2D&filter=${f}&limit=0`;
+ const r=await fetch(u,{method:"GET",mode:"cors",cache:"no-store"});if(!r.ok)throw Error("HTTP "+r.status);const j=await r.json();
  let raw=(j.records||[]).map(x=>({d:new Date(x.TimeUTC??x.TimeDK??x.HourUTC??x.HourDK),p:Number(x.DayAheadPriceDKK??x.SpotPriceDKK??x.PriceDKK)/1000}))
  .filter(x=>Number.isFinite(x.p)&&!isNaN(x.d)).sort((a,b)=>a.d-b.d);if(!raw.length)throw Error("Ingen prisdata");
  const m=new Map();raw.forEach(x=>{let d=x.d,k=[d.getFullYear(),d.getMonth(),d.getDate(),d.getHours()].join("-");if(!m.has(k))m.set(k,{d:new Date(d.getFullYear(),d.getMonth(),d.getDate(),d.getHours()),a:[]});m.get(k).a.push(x.p)});
@@ -57,7 +59,7 @@ try{
  let best;for(let i=0;i<=rows.length-4;i++){let a=rows.slice(i,i+4),avg=a.reduce((s,x)=>s+x.p,0)/4;if(!best||avg<best.avg)best={d:a[0].d,avg}}
  $("car").textContent=best?`${best.d.toLocaleDateString("da-DK",{weekday:"short"})} kl. ${String(best.d.getHours()).padStart(2,"0")}-${String((best.d.getHours()+4)%24).padStart(2,"0")} · ${n(best.avg)} kr.`:"Afventer priser";$("err").innerHTML="";
  localStorage.setItem("lastPrices",JSON.stringify({at:Date.now(),rows:rows.map(x=>({d:x.d,p:x.p}))}));
-}catch(e){$("status").textContent="PRISDATA OFFLINE";$("advice").textContent="Kunne ikke opdatere priser.";$("err").innerHTML=`<div class="err">${e.message}</div>`}}
+}catch(e){$("status").textContent="PRISDATA OFFLINE";$("advice").textContent="Kunne ikke opdatere priser.";$("err").innerHTML=`<div class="err">Forbindelsen til prisserveren fejlede: ${e.message}. Prøv at genindlæse appen.</div>`}}
 load();setInterval(load,15*60*1000);
 if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js");
 </script></body></html>
